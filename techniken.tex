@@ -1,0 +1,12 @@
+\chapter{Techniken}
+In diesem Kapitel werden die referenzierten Techniken erklärt.
+
+\section{Speicher und Latenzen}
+Der Hauptspeicher ist aufgeteilt in den logischen und physischen Speicher.
+Dabei besitzt jeder Prozess einen logischen Adressraum, welcher indirekt aus dem physischen Speicher zugeordnet wird.
+Adressen im Hauptspeicher werden zu \emph{Pages} zusammengefasst, welche immer nur vollständig geladen werden können.
+Wenn ein Prozess eine Page das erste mal benutzt, wird sie erst im physischen Speicher zugewiesen, dementsprechend können gewisse Verzögerungen entstehen beim initialen Aufruf.
+Wenn physischer Speicher ausgeht, können Pages auf die Festplatte auslagern, was sehr langsam werden kann.
+
+Reihen von Pages werden als \emph{Cacheline} immer nur vollständig zusammen geladen.
+Dementsprechend ist es schneller Daten so zu speichern, dass sie nah beieinander im physischen Speicher liegen, sodass so wenig Cachelines nacheinander geladen werden müssen.
