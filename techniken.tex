@@ -88,4 +88,79 @@ Ein Polynom \(a_0, \dots, a_n\) kann mit schlauer mit dem Horner-Schema an der S
 Offenbar muss so der ganze Term von links berechnet werden.
 Alternativ lassen sich jedoch die Potenzen aufteilen in unabhängige gerade und ungerade, die gleichzeitig berechnet werden können.
 
+\newpage
+
 \section{Vektorisierung}\label{sec:2}
+Vektorisierung ist eine weitere Technik, die verwendet werden kann, um mehrere Daten gleichzeitig zu berechnen.
+Generell verläuft Vektorisierung nach dem SIMD (Single Instruction, Multiple Data) Prinzip.
+Wir wenden also die gleiche Operation auf mehrere Daten gleichzeitig an.
+Dabei werden nach AVX und AVX2 spezielle Vektorregister verwendet, die jeweils 128 und 256 Bit gleichzeitig berechnen können.
+In AVX kann mit u.a., Acht 32 Bit \lstinline|float| Werten gleichzeitig gerechnet werden, in AVX2 sind es Sechzehn.
+
+AVX Register können explizit über Intrinsics verwendet werden, es kann aber auch automatisch durch den Compiler vektorisiert werden\footnote{\texttt{-ffast-math} muss als Compiler Flagge gesetzt sein, damit Gleitkommazahlen vektorisiert werden dürfen.}.
+
+Allgemein wird vektorisiert wie in \autoref{lst:3}.
+In diesem Beispiel müssen noch die Acht Teilsummen zusammen und die restlichen Werte\footnote{Wenn \(8 \not\mid n\).} addiert werden.
+Die Gängigen AVX2 Typen und Operationen sind vorzufinden in \autoref{lst:4}.
+
+\begin{lstlisting}[label={lst:3}, caption={Explizite Vektorisierung mit AVX2.}]
+// Ohne Vektorisierung
+float sum = 0.0f;
+for (int i=0; i<n; i++)
+    sum += x[i]
+
+// Mit Vektorisierung
+__m256 v_sum = _mm256_set1_ps(0.0f);
+for (int i=0; i<n-7; i+=8;)
+    sum = _mm256_add_ps(sum, _mm256_loadu_ps(&x[i]);
+\end{lstlisting}
+
+\begin{lstlisting}[label={lst:4}, caption={Wichtige AVX2 Typen und Operationen auf 8 \lstinline|float| Werten.}]
+// 8 floats
+__m256
+// 4 doubles
+__m256d
+// 8 ints
+__m256i
+
+// Lesen und Schreiben auf durch 32 teilbare Adressen
+_mm256_load_ps, _mm256_store_ps
+// Lesen und Schreiben auf beliebige Adressen
+_mm256_loadu_ps, _mm256_storeu_ps
+// Maskiertes Lesen und Schreiben
+_mm256_maskload_ps, _mm256_maskstore_ps
+// Streaming
+_mm256_stream_ps
+\end{lstlisting}
+
+\paragraph{Structure of Arrays}
+Möglicherweise müssen verwendete Datenstrukturen angepasst werden, damit sie effizient Vektorisiert werden können.
+Beispielweise speichert man dafür lieber Felder von Positionen und Massen, als ein Feld von einzelnen Positionen und Massen.
+
+\paragraph{Fallunterscheidungen}
+Etwas anstrengend wird es, wenn Fallunterscheidungen nötig sind.
+Dabei braucht konventionell möglicherweise jeder einzelne Skalar im Vektor einen eigenen Pfad.
+Jedoch gibt es auch hierfür einen netten Trick um die naive Lösung zu umgehen.
+Man kann beide Pfade explizit berechnen, sodass man für \lstinline|float| Typen beispielweise zwei \lstinline|__m256| Vektoren hat, die den ersten und zweiten Fall repräsentieren.
+Dann erstellt man eine Bitmaske mit \lstinline|_mm256_cmp_ps|\footnote{Oder \lstinline|_mm256_cmp_ps_mask| in AVX-512.}, den Vergleich der Fallunterscheidung ausführt.
+Schließlich führt man anhand dieser Bitmaske die Ergebnisse zusammen mit \lstinline|_mm256_blendv_ps|.
+
+Alternativ lassen sich auch andere Tricks ausnutzen, um eine Fallunterscheidung komplett zu umgehen.
+Beispielweise kann man ein Vorzeichen auch direkt als Maske speichern und dann clever beide Pfade zusammenführen in einen, der aber nun abhängig von dieser Maske vorgeht.
+
+\paragraph{Newton-Iteration}
+Einige Operationen im AVX2 Satz sind nur Approximationen für gewisse Funktionen und teilweise nicht genau genug.
+Es lässt sich jedoch die Genauigkeit verbessern, indem wir eine Newton-Iteration dazurechnen.
+Dies lässt sich beispielweise bei der reziproken Wurzel anwenden.
+
+\paragraph{Permutationen}
+Offenbar will man Komponenten in einem Vektor umsortieren.
+Das kann man mit verschiedenen Methoden machen, siehe \autoref{lst:5}.
+
+\begin{lstlisting}[label={lst:5}, caption={Umsortieren in einem \lstinline|__m256|}.]
+__m256 a,b,c;
+int m;
+
+// $c \mapsto []$
+c = _mm256_shuffle_ps(a,b,m);
+\end{lstlisting}
