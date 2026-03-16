@@ -1,12 +1,91 @@
 \chapter{Techniken}
+Es existieren viele relevante Algorithmen mit polynomialer Laufzeit, welche auf vielen Daten angewandt werden müssen.
+Diese Vorlesung behandelt verschiedene Techniken, welche verwendet werden können, um möglichst viele Daten möglichst schnell zu verarbeiten.
+Dabei geht es hauptsächlich nicht um algorithmische Optimierungsschritte, sondern um die vollständige Ausnutzung der Computer Hardware.
+
+Allgemeine Techniken, die in dieser Vorlesung vorgestellt werden sind: Cache- und Speicher-Optimierung, Vektorisierung, Parallelisierung, Verteiltes Rechnen und Rechnen auf Grafikkarten.
+
 In diesem Kapitel werden die referenzierten Techniken erklärt.
 
 \section{Speicher und Latenzen}
 Der Hauptspeicher ist aufgeteilt in den logischen und physischen Speicher.
 Dabei besitzt jeder Prozess einen logischen Adressraum, welcher indirekt aus dem physischen Speicher zugeordnet wird.
+
+\paragraph{Pages}
 Adressen im Hauptspeicher werden zu \emph{Pages} zusammengefasst, welche immer nur vollständig geladen werden können.
 Wenn ein Prozess eine Page das erste mal benutzt, wird sie erst im physischen Speicher zugewiesen, dementsprechend können gewisse Verzögerungen entstehen beim initialen Aufruf.
 Wenn physischer Speicher ausgeht, können Pages auf die Festplatte auslagern, was sehr langsam werden kann.
 
+\paragraph{Cachelines und Cache}
 Reihen von Pages werden als \emph{Cacheline} immer nur vollständig zusammen geladen.
-Dementsprechend ist es schneller Daten so zu speichern, dass sie nah beieinander im physischen Speicher liegen, sodass so wenig Cachelines nacheinander geladen werden müssen.
+Dementsprechend ist es schneller Daten nah beieinander im physischen Speicher zu speichern, sodass so wenig Cachelines direkt nacheinander geladen werden müssen wie möglich.
+
+Beispielweise ist es schneller ein Reihen-verteiltes zweidimensionales Feld \lstinline|int vec[n * m]| an der Stelle \(i \in [n], j \in [m]\) mit Adressierung \lstinline|vec[i + j * n]| so zu indizieren, dass \(i\) schneller als \(j\) inkrementiert wird.
+
+Cachelines werden im Cache zwischengespeichert.
+Es gibt drei Caches in der CPU, den \emph{1st}, \emph{2nd}, und, \emph{3rd Level Cache}, die sich unterscheiden in Größe und Geschwindigkeit.
+Dabei ist der 1st Level Cache der schnellste und kleinste mit beispielweise 32 KB pro Kern, währenddessen der 3rd Level Cache am langsamsten und größten ist mit beispielweise 32 MB geteiltem Speicher.
+
+\paragraph{Thrashing}
+Da der Cache im Vergleich zum physischem Speicher sehr klein ist, wird der gleiche Bereich im Cache oft von verschiedenen Adressen im Hauptspeicher verwendet.
+Dementsprechend, wenn zwei Cachelines den gleichen Bereich im Cache zugeordnet werden, kann es zu \emph{Trashing} kommen, wenn beide gleichzeitig oder nacheinander verwendet werden müssen.
+Da nur eine Cacheline gleichzeitig in der Stelle im Cache liegen kann, wird dann wiederholt die derzeitige Cacheline verworfen, und die andere Cacheline aus dem Hauptspeicher gelesen.
+
+Um Trashing zu verhindern, kann es oftmals praktisch sein, die Problemgröße anzupassen und keine Zweierpotenzen zu verwenden beim Zuordnen von Speicher.
+Somit wird verhindert, dass zwei Variablen so gespeichert werden, dass ihre Cachelines überlappen.
+
+\paragraph{Superskalare Berechnungen}
+Wenn ein Programm Daten aus dem Hauptspeicher lädt, kann das mehrere Hundert Taktzyklen dauern.
+Damit die CPU in dieser Zeit nicht blockiert, können Befehle so geordnet werden, dass während dem Warten etwas anderes berechnet wird.
+Dies ist offensichtlich nur möglich, wenn die Befehle unabhängig sind.
+
+Eine Technik die dies zu nützen macht, ist \emph{Loop unrolling}.
+Hierbei werden parallelisierbare Schleifen so aufgeteilt, dass beim Warten eine anderer Befehl berechnet werden kann, siehe \autoref{lst:1}.
+
+\begin{lstlisting}[label={lst:1}, caption={Loop unrolling über die cumulative Sinus-Funktion.}]
+// Naive
+for (int i=0; i<n; i++) {
+    x[i] = sin(y[i]);
+}
+
+// Loop unrolling
+for (int i=0; i+1 < n; i+=2) {
+    x[i] = sin(y[i]);
+    x[i+1] = sin(y[i+1]);
+}
+\end{lstlisting}
+
+\pagebreak
+
+Eine alternative Technik ist das sog. \emph{Prefetching}, wo Daten vorzeitig in den Cache geladen werden, bevor sie verwendet werden müssen, siehe \autoref{lst:2}.
+Der Vorteil dieser Technik ist, dass so auch Daten, von denen der Compiler noch nicht einschätzen kann, wann sie geladen werden müssen, geladen werden können.
+Dies wäre zum Beispiel der Fall bei \lstinline|x[i] = z[y[i]]|, wo die Position in \(z\) abhängig vom Wert in \(y\) ist, und somit laufzeitabhängig sein kann.
+
+\begin{lstlisting}[label={lst:2}, caption={Prefetching für \autoref{lst:1}.}]
+// Prefetching
+for (int i=0; i<n-50; i++) {
+    __builtin_prefetch(&y[i+50]);
+    x[i] = sin(y[i]);
+}
+
+for (int i=n-50; i < n; i++) {
+    x[i] = sin(y[i]);
+}
+\end{lstlisting}
+
+\paragraph{Streaming}
+Wenn ein Programm nur schreiben will, können unnötige Latenzen entstehen, da die jeweilige Cacheline erst gelesen werden muss, und somit in den Cache geladen wird.
+Alternativ können diese Latenzen und das unnötige Füllen vom Cache umgangen werden mit sog. \emph{Streaming}, wo Schreibzugriffe am Cache vorbei durchgeführt werden.
+
+Dies ist zum Beispiel möglich im AVX2 Standard\footnote{Mehr hierzu in \autoref{sec:2}.}, wo 256 Bit Vektoren, also 8 \lstinline|float| Werte am Laufband vom Feld \lstinline|float y[8]| in das Feld \lstinline|float x[8]| geschrieben werden können mittels \lstinline|_mm256_stream_ps(x, _mm256_load_ps(y));|
+
+\paragraph{Pipelining}
+Die Idee hinter \emph{Pipelining} ist es, Latenzen zu verstecken, indem unabhängige Operationen gleichzeitig ausgeführt werden, wie beim Loop unrolling und Prefetching.
+
+Ein Beispiel hinter dieser Technik ist das Horner-Schema.
+Ein Polynom \(a_0, \dots, a_n\) kann mit schlauer mit dem Horner-Schema an der Stelle \(x\) ausgewertet werden mit
+\[(((a_n x + a_{n-1}) x + a_{n-2}) \dots ) x + a_0.\]
+Offenbar muss so der ganze Term von links berechnet werden.
+Alternativ lassen sich jedoch die Potenzen aufteilen in unabhängige gerade und ungerade, die gleichzeitig berechnet werden können.
+
+\section{Vektorisierung}\label{sec:2}
