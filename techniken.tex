@@ -159,8 +159,186 @@ Das kann man mit verschiedenen Methoden machen, siehe \autoref{lst:5}.
 
 \begin{lstlisting}[label={lst:5}, caption={Umsortieren in einem \lstinline|__m256|}.]
 __m256 a,b,c;
+// $m$ binäre Zahl bestehend aus 2er Ziffern $\alpha, \beta, \gamma, \delta$
 int m;
+__m256i i;
 
-// $c \mapsto []$
-c = _mm256_shuffle_ps(a,b,m);
+// $c \leftarrow [a_\alpha, a_\beta, b_\gamma, b_\delta, a_{\alpha + 4}, a_{\beta + 4}, b_{\gamma + 4}, b_{\delta + 4}]$
+c = _mm256_shuffle_ps(a, b, m);
+// $c \leftarrow [ab_{\alpha..\alpha+4}, ab_{\beta..\beta+4}, \dots]$
+c = _mm256_permute2f128_ps(a, b, m);
+// $c \leftarrow [a_1, b_1, a_2, b_2, a_5, b_5, a_6, b_6]$
+c = _mm256_unpacklo_ps(a, b);
+// $c \leftarrow [a_3, b_3, a_4, b_4, a_7, b_7, a_8, b_8]$
+c = _mm256_unpackhi_ps(a, b);
+// $c \leftarrow [a_{i_0}, a_{i_1}, \dots, a_{i_8}]$
+c = _mm256_permutevar_ps(a, i);
 \end{lstlisting}
+
+\paragraph{Generelle Operationen}
+Operationen werden mit den \lstinline|_mm256_$a$_$b$| Intrinsics ausgeführt, wobei \(a \in \{\text{\lstinline|add|}, \text{\lstinline|sub|}, \text{\lstinline|mul|}, \text{\lstinline|div|}\}\) für \(b \in \{\text{\lstinline|pd|}, \text{\lstinline|ps|}, \text{\lstinline|epi8|}, \text{\lstinline|epi16|}, \dots, \text{\lstinline|epi64|}\}\). Für die ganzzahligen Typen gibt es auch \(a \in \{\text{\lstinline|and|}, \text{\lstinline|or|}, \text{\lstinline|xor|}\}\) sowie Bit Shifts und Fallunterscheidungen.
+
+Da es keine Bit Shifts für Gleitkommazahlen gibt, kann es oft schlau sein eine Gleitkommazahl zu einer Ganzzahl hin und zurück zu konvertieren, um Bitmasken anzuwenden.
+
+\section{Multithreading mit OpenMP}
+Es gibt verschiedene Arten der Parallelisierung, erst beschäftigen wir uns mit Multithreading welches mit mehreren Prozessorkernen gleichzeitig rechnet.
+Dafür verwenden wir den OpenMP (OMP) 4.0 Standard.
+
+\paragraph{Threads} \emph{Threads} werden von Kernen ausgeführt.
+Sie haben einen eigenen Befehlszähler, eigene Register, und einen eigenen Stack.
+Threads werden einem Prozess zugeordnet, und teilen sich jeweils den assoziierten Adressraum.
+
+OMP verwendet \lstinline|#pragma|-Direktiven, um Teams von Threads zu spezifizieren, siehe \autoref{lst:6}.
+Die Nummer eines Threads sowie die Nummer an erzeugten Threads wird von jedem Thread berechnet und ausgegeben.
+Der Thread mit Nummer 0 wird oft als \emph{Anführer} verwendet.
+
+\begin{lstlisting}[label={lst:6}]
+#pragma omp parallel
+{
+    int rank = omp_get_thread_num();
+    int size = omp_get_num_threads();
+
+    printf("Thread %d/%d reporting for duty\n", rank, size);
+}
+\end{lstlisting}
+
+In OMP gibt es private und geteilte Variablen zwischen Threads.
+Variablen, die innerhalb eines parallelisierten Bereiches deklariert werden, sind immer privat, währenddessen äußere Variablen normalerweise geteilt werden.
+Äußere Variablen können aber auch privat gesetzt werden, indem im pragma zusätzlich noch \lstinline|firstprivate($\dots$)| spezifiziert wird.
+
+Es kann außerdem \lstinline|#pragma omp for| in einem parallelisierten Bereich direkt vor eine einfache \lstinline|for|-Schleife gesetzt werden, damit die Threads automatisch auf die Iterationen geteilt werden -- das kann aber auch manuell über \lstinline|omp_get_thread_num| und \lstinline|omp_get_num_threads| implementiert werden.
+Wenn direkt nacheinander \(n\) \lstinline|for|-Schleifen nach einem \lstinline|#pragma omp for| kommen, kann \lstinline|collapse($n$)| hinzugefügt werden, um die \lstinline|for|-Schleifen zusammenzufassen.
+
+\paragraph{Barrieren}
+Oft müssen Threads an einer Stelle synchronisiert werden um Wettlaufsituationen (eng. \emph{Race Conditions}) zu verhindern.
+Mit \lstinline|#pragma omp barrier| wird garantiert, dass alle Threads die jeweilige Zeile erst erreichen müssen, bevor sie weiter dürfen.
+Eine Barriere wird implizit auch nach einer parallelisierten \lstinline|for|-Schleife eingefügt.
+
+\paragraph{Speicheraktualisierung}
+Da sich Threads nicht Register teilen, muss manchmal garantiert werden, dass ein Wert einer geteilten Variable vollständig aktualisiert wurde.
+Das geht mit \lstinline|#pragma omp flush|.
+
+\paragraph{False Sharing}
+Wenn mehrere Threads gleichzeitig auf die gleiche Cacheline zugreifen, kann es sein, dass weitere Latenzen vorkommen, da die Cachelines erst synchronisiert werden müssen.
+Sobald ein Thread eine Cacheline verändert, wird diese für die anderen Threads invalidiert und muss aktualisiert werden.
+Das nicht nur der Fall wenn die gleiche geteilte Variable verändert wird, sondern auch, wenn nah beinahe private Variablen, verändert werden.
+
+\subsection{Nichtdeterministisches Verhalten}
+Wenn mehrere Threads auf die gleiche Variable schreiben, kann es zu Wettlaufsituationen kommen, wodurch der Wert der Variable nicht deterministisch wird.
+Das liegt offenbar daran, dass einige Threads die Variable lesen, bevor sie verändert wird von einem anderen Thread, aber danach auf sie schreiben.
+
+\paragraph{Atomare Operationen}
+Solche Situationen können durch u.a. \emph{atomare Operationen} verhindert werden.
+Mit \lstinline|#pragma omp atomic| wird garantiert, dass die folgende Operation, wie zum Beispiel \lstinline|i++|, unteilbar ausgeführt wird, was von der Hardware garantiert werden kann.
+
+\paragraph{Kritische Abschnitte}
+Ähnlich wie atomare Operationen kann man auch einen generellen Bereich mit \lstinline|#pragma omp critical| versehen wird, der die jeweilige Zeile für andere Threads blockiert, wenn sie erreicht wird.
+Das ist allerdings ziemlich langsam, weil dann immer alle Threads synchronisiert werden müssen an der Stelle.
+
+\paragraph{Reduktion}
+Eine weitere Methode ist die \emph{Reduktion} einer Variable auf die gleichzeitig geschrieben werden soll.
+Hierfür schreibt man an den \lstinline|#pragma omp parallel| Befehl noch den Parameter \lstinline|reduction($id$:$v, \dots$)|, wobei \(id\) spezifiziert wie reduziert wird, z.B. \lstinline|+|, \lstinline|-|, \lstinline|*|, \lstinline|&&|, \lstinline&||&, \lstinline|max|, \lstinline|min|, und \(v, \dots\) meint, welche Variablen reduziert werden sollen.
+Das funktioniert, indem temporär pro Thread eine private Version der Variable modifiziert wird, die nach dem Block wieder zusammen gefügt wird.
+
+\paragraph{Locks}
+\emph{Locks} sind eine Generalisierung von kritischen Abschnitten, die verwendet werden können um zu kontrollieren, wann gleichzeitig bestimmte Regionen ausgeführt werden sollen, und wann nicht.
+Locks werden mit dem Datentyp \lstinline|omp_lock_t| repräsentiert.
+Durch \lstinline|omp_init_lock| und \lstinline|omp_destroy_lock| werden sie angelegt und gelöscht.
+Ein nicht geschlossenes Lock kann mit \lstinline|omp_set_lock| abgeschlossen werden.
+Erreicht nun ein Thread ein abgeschlossenes Lock und versucht es aufzuschließen, blockiert dieser Thread, bis es wieder aufgeschlossen wurde, und somit wieder abgeschlossen werden kann.
+Ein Lock wird mit \lstinline|omp_unset_lock| aufgeschlossen.
+Um herauszufinden ob ein Lock geschlossen oder aufgeschlossen ist, kann \lstinline|omp_test_lock| verwendet werden.
+
+\paragraph{Tasks}
+In OMP kann man Abschnitte als \emph{Tasks} markieren.
+Wenn ein Team ein Task erreicht, führt ein Thread des Teams diese Aufgabe aus.
+Ein Task kann eine Zeile oder ein Block sein und wird mit \lstinline|#pragma omp task| markiert.
+Tasks können verwendet werden, um unabhängige Aufgaben zu erledigen.
+Mit \lstinline|#pragma omp taskwait| kann ein Team warten bis alle Tasks im Block abgeschlossen wurden.
+
+Offenbar will man nicht, dass immer alle Threads warten müssen, wenn synchronisiert werden muss.
+In OMP 4.0 wurden deswegen Task Abhängigkeiten eingeführt, mit denen spezifiziert werden kann, welche Tasks von anderen abhängig sind.
+Abhängigkeiten werden mit der \lstinline|depend($t$: $v, \dots$)|-Klausel in einem Task deklariert.
+Dabei kann \(t\) entweder \lstinline|in|, \lstinline|out|, oder \lstinline|inout| sein, je nachdem wie die Abhängigkeit über Variablen \(v, \dots\) funktionieren soll.
+Tasks werden dann so ausgeführt, dass alle Tasks mit einer \lstinline|in|- oder \lstinline|out|-Abhängigkeit für \(x\) auf alle vorherigen Tasks warten, die auf \(x\) schreiben (\lstinline|out| und \lstinline|inout|).
+Tasks mit einer \lstinline|inout|-Abhängigkeit für \(x\) warten auf alle vorherigen Tasks, die \(x\) lesen oder auf \(x\) schreiben (\lstinline|in|, \lstinline|out|, \lstinline|inout|).
+
+Schleifen können auch in Tasks aufgeteilt werden mit \lstinline|#pragma omp taskloop|, wo ein bestehendes Team von Threads automatisch auf einzelne Iterationen aufgeteilt wird.
+
+\paragraph{SIMD in OpenMP}
+OMP kann auch verwendet werden, um automatisch \lstinline|for|-Schleifen zu vektorisieren mit \lstinline|#pragma omp simd|.
+Somit kann effizient gleichzeitig parallelisiert und automatisch vektorisiert werden.
+
+\section{Schnelle Verfahren für Vielkörpersysteme}
+Je nach Problem können auch Approximationsalgorithmen verwendet werden, die schnell und genau sind.
+In der Vorlesung wird das am Beispiel der Berechnung von Gravitationskräften diskutiert.
+Hierfür ist die Idee den Raum hierarchisch zu partitionieren durch Clustering und die Gravitationskräfte durch Tensor-Interpolation darzustellen.
+Somit kann die Kraft zwischen entfernten Sternen approximiert werden, indem einem Sterncluster ein Gravitationspotential interpoliert wird.
+Dabei kann beim symmetrischen Verfahren die Approximation verwendet werden, wenn der Abstand zwischen Clustern größer ist, als die jeweiligen Diameter.
+
+Das ganze erfolgt beispielweise symmetrisch über Vorwärts- und Rückwärtstransformationen bei denen jeweils rekursiv die Gravitationsfaktoren für alle Cluster berechnet werden und berechnete Kräfte zu Vaterknoten weitergegeben werden.
+
+\pagebreak
+
+\section{Verteiltes Rechnen mit MPI}
+Die Idee hinter verteiltem Rechnen ist eine Parallelisierung zwischen verschiedenen Geräten die erfolgt indem Nachrichten in einem Netzwerk ausgetauscht werden zwischen einzelnen Systemen.
+Der Message Passing Interface (MPI) Standard wird oft verwendet, um ein Problem verteilt zu lösen und die nötige Kommunikation zu regeln.
+
+MPI wird über eine Bibliothek in C Code eingebunden, der mit einem seperaten Compiler namens \emph{mpicc} übersetzt wird, und mit \emph{mpirun} ausgeführt werden muss.
+
+\paragraph{Prozesse}
+Die Parallelisierung erfolgt über Prozesse und nicht über Threads wie in OMP.
+Dazu ist zu beachten, dass Prozesse ihren eigenen Adressraum besitzen, somit gibt es also keine direkt geteilten Variablen zwischen Prozessen.
+
+\paragraph{Kommunikatoren}
+In MPI wird über spezielle \emph{Kommunikatoren} mit Typ \lstinline|MPI_Comm| \emph{kommuniziert}\footnote{;)}.
+Sie ordnen jedem Prozess einen Rang zu und stellen sicher, dass synchrone Nachrichten in der Reihenfolge empfangen werden, in der sie gesendet werden.
+MPI definiert automatisch die Kommunikatoren \lstinline|MPI_COMM_WORLD| und \lstinline|MPI_COMM_SELF|, jedoch können noch weitere zur Laufzeit erstellt werden.
+
+Nachrichten besitzen einen Absender und Empfänger, welche durch den Rang zugeordnet werden.
+Außerdem enthalten Nachrichten eine Markierung und eine Anzahl von Elementen eines Typs.
+Ein simples Beispielprogramm, das MPI einbindet und zwischen zwei Prozessen eine Nachricht austauscht, ist zu finden in \autoref{lst:7}.
+
+\begin{lstlisting}[label={lst:7}, caption={Ein einfaches MPI Programm}]
+int main(int argc, char** argv) {
+    char buf[6];
+    int rank;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (rank == 0)
+        MPI_Send("Hello", 6, MPI_CHAR, 1, 0, MPI_COMM_WORLD);
+    else if (rank == 1) {
+        MPI_Recv(buf, 6, MPI_CHAR, 0, 0, MPI_COMM_WORLD,
+        MPI_STATUS_IGNORE);
+        printf("%s World\n", buf);
+    }
+
+    MPI_Finalize();
+    return 0;
+}
+\end{lstlisting}
+
+Die wichtigsten Methoden in MPI werden in \autoref{lst:8} erklärt.
+
+\begin{lstlisting}[label={lst:8}, caption={Grundlegende Funktionen in MPI.}]
+// Startet MPI
+MPI_Init(int* argc, char** argv);
+// Beendet MPI
+MPI_Finalize();
+
+// Ermittelt die Anzahl an Prozessen
+MPI_Comm_size(MPI_Comm comm, int* rank);
+// Ermittelt den Rang des aktuellen Prozesses
+MPI_Comm_rank(MPI_COMM comm, int* size);
+
+// Sendet buf an dest
+MPI_Send(void* buf, int count, MPI_Datatype type, int dest, int tag, MPI_Comm comm);
+// Empfängt eine Nachricht von src
+MPI_Recv(void* buf, int count, MPI_Datatype type, int src, int tag, MPI_Comm comm, MPI_Status* status);
+\end{lstlisting}
+
+\paragraph{Tags}
+\emph{Tags} werden beim Senden und Empfangen einer Nachricht verwendet.
+Die Tags von Sende- und Empfangsoperationen müssen gleich sein, wobei \lstinline|MPI_ANY_TAG| beim Empfangen zu allen Tags passt.

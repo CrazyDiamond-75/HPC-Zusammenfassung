@@ -123,11 +123,11 @@
     showstringspaces=false,             % underline spaces within strings only
     showtabs=false,                     % show tabs within strings adding particular underscores
     tabsize=2,                          % sets default tabsize to 4 spaces
-    emph={__m256, __m256d, __m256i},
-    emphstyle={\bfseries\color{codepurple}},
+    morekeywords={__m256, __m256d, __m256i, omp_lock_t, MPI_Comm, MPI_Datatype, MPI_Status},
     keywordstyle=\bfseries\color{codepurple},
     stringstyle=\color{string},
     commentstyle=\itshape\color{comment},
+    morecomment=[f]{\#pragma},
     texcl=true,
     mathescape=true,
     xleftmargin=.1\textwidth, xrightmargin=.1\textwidth
