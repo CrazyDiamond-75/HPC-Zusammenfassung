@@ -324,21 +324,57 @@ Die wichtigsten Methoden in MPI werden in \autoref{lst:8} erklärt.
 
 \begin{lstlisting}[label={lst:8}, caption={Grundlegende Funktionen in MPI.}]
 // Startet MPI
-MPI_Init(int* argc, char** argv);
+int MPI_Init(int* argc, char** argv);
 // Beendet MPI
-MPI_Finalize();
+int MPI_Finalize();
 
 // Ermittelt die Anzahl an Prozessen
-MPI_Comm_size(MPI_Comm comm, int* rank);
+int MPI_Comm_size(MPI_Comm comm, int* rank);
 // Ermittelt den Rang des aktuellen Prozesses
-MPI_Comm_rank(MPI_COMM comm, int* size);
+int MPI_Comm_rank(MPI_COMM comm, int* size);
 
 // Sendet buf an dest
-MPI_Send(void* buf, int count, MPI_Datatype type, int dest, int tag, MPI_Comm comm);
+int MPI_Send(void* buf, int count, MPI_Datatype type, int dest, int tag, MPI_Comm comm);
 // Empfängt eine Nachricht von src
-MPI_Recv(void* buf, int count, MPI_Datatype type, int src, int tag, MPI_Comm comm, MPI_Status* status);
+int MPI_Recv(void* buf, int count, MPI_Datatype type, int src, int tag, MPI_Comm comm, MPI_Status* status);
 \end{lstlisting}
 
 \paragraph{Tags}
 \emph{Tags} werden beim Senden und Empfangen einer Nachricht verwendet.
 Die Tags von Sende- und Empfangsoperationen müssen gleich sein, wobei \lstinline|MPI_ANY_TAG| beim Empfangen zu allen Tags passt.
+
+\paragraph{Synchrones und Asynchrones Senden}
+\lstinline|MPI_Send| und \lstinline|MPI_Recv| können warten, bis eine Empfangsoperation begonnen hat oder abgeschlossen wurde, was unter Umständen zu Deadlocks führen kann.
+Wenn \lstinline|MPI_Send| warten soll, bis eine Empfangsoperation begonnen hat, kann man \lstinline|MPI_Ssend| verwenden.
+Alternativ lassen sich \lstinline|MPI_Isend| und \lstinline|MPI_Irecv| verwenden, die nicht blockieren.
+Bei diesen Funktionen wird ein \lstinline|MPI_Request| Pointer noch hinzugegeben, welcher von \lstinline|MPI_Wait| verwendet werden kann, um bis zu der jeweiligen Fertigstellung zu warten.
+
+\paragraph{Kollektive Kommunikation}
+Einige Operationen können effizient ausgeführt werden, wenn mehrere Prozesse direkt zusammen arbeiten.
+Methoden, die die nötige Kommunikation zwischen allen Prozessen realisieren sind in \autoref{lst:9} zu finden.
+
+\begin{lstlisting}[label={lst:9}, caption={Kollektive Kommunikation in MPI.}]
+// Sendet an alle anderen Prozesse eine Nachricht
+int MPI_Bcast(void* buf, int count, MPI_Datatype type, int root, MPI_Comm comm);
+
+// Sammelt Daten von allen Prozessen und reduziert für root, verschickt dabei jeweils sendbuf
+int MPI_Reduce(void* sendbuf, void* recvbuf, int count, MPI_Datatype type, MPI_Op op, int root, MPI_Comm comm);
+\end{lstlisting}
+
+Dabei wird der Parameter \lstinline|root| verwendet, um die Rang der Quelle zu spezifizieren, und \lstinline|op|, wie die Daten zusammengeführt werden sollen bei der Reduktion.
+Beispielweise können \lstinline|MPI_MAX|, \lstinline|MPI_MIN|, \lstinline|MPI_SUM|, oder \lstinline|MPI_PROD| für \lstinline|op| verwendet werden.
+
+Es gibt außerdem nicht-blockierende Versionen von \lstinline|MPI_Bcast| und \lstinline|MPI_Reduce|, sowohl eine Funktion \lstinline|MPI_Allreduce|, die zuerst reduziert, um dann das Ergebnis an alle anderen Prozesse zu schicken.
+
+\paragraph{Scatter und Gather}
+\emph{Scatter}- und \emph{Gather}-Operationen sind spezielle Formen von kollektiver Kommunikation, bei denen jeweils einzelne Elemente eines Arrays an verschiedene Prozesse geschickt werden, sowie ein Array aus einzelnen empfangenen Elementen verschiedener Prozesse zusammengebaut wird.
+Hierfür werden die \lstinline|MPI_Scatter| und \lstinline|MPI_Gather| Funktionen verwendet.
+Für Arrays mit Elementen unterschiedlicher Länge existieren außerdem noch \lstinline|MPI_Scatterv| und \lstinline|MPI_Gatherv|.
+
+\paragraph{All-to-all}
+Um Nachrichten von allen Prozessen zu allen anderen zu schicken, kann auch statt einem Aufruf von \lstinline|MPI_Bcast| bei jedem Prozess, die Funktion \lstinline|MPI_Alltoall| verwendet werden, welche dann zusätzlich die eingehenden Nachrichten automatisch annimmt.
+Von dieser Funktion existiert wieder eine Version mit variabler Nachrichtlänge.
+
+\paragraph{Einseitige Kommunikation}
+In MPI werden außerdem Methoden realisiert, die eine einseitige Kommunikation möglich machen, bei der ein Prozess auf Daten anderer direkt zugreifen kann.
+Das erfolgt über sog. Fenster, mit denen ein Prozess einen Teil seines Speichers an andere anbieten kann.
