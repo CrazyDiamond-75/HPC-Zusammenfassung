@@ -378,3 +378,113 @@ Von dieser Funktion existiert wieder eine Version mit variabler Nachrichtlänge.
 \paragraph{Einseitige Kommunikation}
 In MPI werden außerdem Methoden realisiert, die eine einseitige Kommunikation möglich machen, bei der ein Prozess auf Daten anderer direkt zugreifen kann.
 Das erfolgt über sog. Fenster, mit denen ein Prozess einen Teil seines Speichers an andere anbieten kann.
+
+\section{Rechnen auf Grafikkarten}
+Das Rechnen auf GPUs kann für einige parallelisierbare Probleme erheblich schneller funktionieren als auf CPUs.
+GPUs sind gut dazu geeignet gleichzeitig die gleiche Operationen für viele Daten anzuwenden, aber schlecht für Probleme mit komplexen Fallunterscheidungen.
+GPUs können schneller auf den Grafikspeicher zugreifen als CPUs auf den Hauptspeicher, jedoch gibt es weniger Grafikspeicher und es muss koordiniert werden, wie effizient Daten vom Hauptspeicher auf den Grafikspeicher kopiert werden.
+
+Generell verläuft GPU Programmierung nach dem SIMT (Single Instruction Multiple Threads) Prinzip.
+Ein Programm erstellt sehr viele GPU Threads, welche nur aus einem Befehlszähler und wenigen Registern bestehen, aber keinem Stack!
+
+\paragraph{Threadblöcke}
+Threads werden in \emph{Threadblöcken} zusammengefasst.
+Threads im gleichen Threadblock teilen sich Register und können sich synchronisieren.
+
+\paragraph{Warps}
+Threadblöcke werden in \emph{Warps} à la typischerweise 32 Threads zerlegt.
+In jedem Taktzyklus wählt die GPU einen Warp und eine Operation, die für alle Threads im Warp ausgeführt wird, wenn sie ausgeführt werden muss.
+
+\subsection{CUDA}
+NVIDIAs Compute Unified Device Architecture (CUDA) ist eine Erweiterung von C++, die es ermöglicht Maschinencode für CPUs, GPUs, sowie deren Koordination zu schreiben.
+Leider läuft CUDA nur auf NVIDIA Grafikkarten, ist jedoch sehr leicht zu lernen.
+In CUDA werden einige Begriffe eingeführt.
+
+\begin{description}
+\item[Host] Computer, der die Grafikkarte initialisiert, mit Daten versorgt, und CUDA Threads startet.
+\item[CUDA Device] Gerät mit Multiprozessoren und Grafikspeicher, das verbunden ist mit dem Host.
+\item[Multiprozessor] Besteht aus Kernen, Scheduler, kleinem gemeinsam genutzten Speicher, und großem Registersatz.
+\item[Kerne] Führen die Operationen von Threads aus.
+\end{description}
+
+\paragraph{CUDA Kernel}
+In der CUDA Sprache werden Funktionen, die auf der GPU ausgeführt werden sollen als Kernel mit \lstinline|__global__| markiert.
+Pointer in solcher Methode beziehen sich stehts auf den Grafikspeicher.
+Mit \lstinline|blockIdx.x * blockDim.x + threadIdx.x| lässt sich ein Rang für den jeweiligen Thread berechnen.
+
+Bevor ein Kernel aufgerufen werden kann, muss der nötige Grafikspeicher angefordert werden.
+Das erfolgt mit \lstinline|cudaMalloc(void** mem, size_t size)|.
+Der Transfer zwischen CPU Pointer und GPU Pointer wird mit \lstinline|cudaMemcpy(void* dest, void* src, size_t size, enum kind)| realisiert.
+Der Parameter \lstinline|kind| kann dabei entweder \lstinline|cudaMemcpyHostToDevice| oder \lstinline|cudaMemcpyDeviceToHost| sein.
+
+Ein Kernel \lstinline|func| wird mit \lstinline|func<<<($T$, $B$>>>($\dots$)| aufgerufen, wobei \(B\) die Blockgröße ist, und \(T\) die Anzahl an Threadblöcken darstellt.
+Typischerweise haben wir \(B = 256\) und \(T = (n+255)/256\) für Problemgröße \(n\).
+
+Nach dem Aufruf vom Kernel rechnet die CPU nebenbei weiter, kann aber mit \lstinline|cudaDeviceSynchronize| auf das Ende vom Kernel warten.
+
+\paragraph{Unified Memory}
+Alternativ zum manuellen Übertragen zwischen Daten im Hauptspeicher und Grafikspeicher, kann CUDA den Transfer automatisch organisieren.
+Das funktioniert mit \lstinline|cudaMallocManaged(void** mem, size_t size)|.
+Der Pointer \lstinline|mem*| wird nun automatisch im Kernel als Grafikadresse interpretiert, und der Transfer zwischen GPU und CPU Speicher funktioniert intime ähnlich wie Cache.
+
+\paragraph{Streams}
+Eine schlauere Methode den Datentransfer zu regeln erfolgt durch \emph{Streams} -- einem nicht-blockierenden Datentransfer.
+Die Idee ist, gleichzeitig auf der GPU zu rechnen während auf die nächsten Daten gewartet wird.
+Ein Beispielprogramm, das Streams verwendet ist in \autoref{lst:10} zu finden.
+
+\begin{lstlisting}[label={lst:10}, caption={Ausführen eines Kernels mit 2 Streams.}]
+#define STREAMS 2
+
+float* dev_x[STREAMS];
+float* dev_y[STREAMS];
+
+cudaStream_x streams[STREAMS];
+
+for (int i = 0; i < STREAMS; i++) {
+    // Erstelle alle Streams
+    cudaStreamCreate(&streams[i]);
+    // Erstelle Blöcke mit Größe n / STREAMS
+    cudaMalloc(&dev_x[i], n / STREAMS * sizeof(float));
+    cudaMalloc(&dev_y[i], n / STREAMS * sizeof(float));
+}
+
+for (int i = 0; i < STREAMS; i++) {
+    // Fülle alle Streams mit Daten.
+    cudaMemcpyAsync(dev_x[i], &x[i * (n / STREAMS)], sizeof(float) * (n / STREAMS), cudaMemcpyHostToDevice, streams[i]);
+    // Führe den Kernel mit dem aktuellen Stream aus.
+    kernel<<<(n/STREAMS + 255)/256, 256, 0, streams[i]>>>(n / STREAMS, dev_x[i], dev_y[i]);
+    // Kopiere die Daten wieder in den Hauptspeicher.
+    cudaMemcpyAsync(&y[i * (n / STREAMS)], dev_y[i], sizeof(float) * (n / STREAMS), cudaMemcpyDeviceToHost, streams[i]);
+}
+
+// Synchronisiere Streams und zerstöre sie.
+for (int i = 0; i < STREAMS; i++) {
+    cudaStreamSynchronize(streams[i]);
+    cudaFree(dev_x[i]);
+    cudaFree(dev_y[i]);
+    cudaStreamDestroy(streams[i]);
+}
+\end{lstlisting}
+
+\subsection{OpenCL}
+Eine Alternative zu CUDA, die auf vielen Geräten funktioniert, ist OpenGL.
+Leider ist OpenCL durchaus komplexer als CUDA und hat eine etwas lästige Designphilosophie.
+Um ein Programm in OpenCL zu starten, müssen die folgenden Schritte erfolgen.
+
+\begin{enumerate}
+    \item Finde und wähle die Plattform (Verschiedene Implementierungen von OpenCL, z.B. NVIDIA CUDA, rusticl).
+    \item Finde und wähle das Gerät oder die Geräte (GPU0, GPU1, CPU).
+    \item Erstelle einen Kontext, der Geräte der gleichen Plattform koordinieren kann.
+    \item Erstelle ein OpenCL Programm für den Kontext durch einen Quelltext als String.
+    \item Übersetze das Programm in Maschinencode für die Geräte.
+    \item Erstelle den Kernel aus dem Programm.
+    \item Lege Speicher für die Parameter (Pointer zu Input und Output) an.
+    \item Binde alle erstellten Speicher einzeln zu den jeweiligen Parameter.
+    \item Erstelle eine Warteschlange für Befehle, die nicht-blockierend ausgeführt werden.
+    \item Füge an die Warteschlange einen Befehl, der die Inputs auf den GPU Speicher schreibt.
+    \item Füge an die Warteschlange einen Befehl, der den Kernel ausführt.
+    \item Füge an die Warteschlange einen Befehl, der die Ergebnisse in den Hauptspeicher schreibt.
+    \item Zuletzt, warte bis alle Befehle in der Warteschlange ausgeführt wurden.
+\end{enumerate}
+
+Unterschiedlich zu CUDA, werden Threads tatsächlich \emph{Work Iterms} genannt, und Threadblöcke \emph{Work Groups}.
