@@ -1,11 +1,11 @@
-\chapter{Techniken}
+\section*{Einleitung}
 Es existieren viele relevante Algorithmen mit polynomialer Laufzeit, welche auf vielen Daten angewandt werden müssen.
 Diese Vorlesung behandelt verschiedene Techniken, welche verwendet werden können, um möglichst viele Daten möglichst schnell zu verarbeiten.
 Dabei geht es hauptsächlich nicht um algorithmische Optimierungsschritte, sondern um die vollständige Ausnutzung der Computer Hardware.
 
 Allgemeine Techniken, die in dieser Vorlesung vorgestellt werden sind: Cache- und Speicher-Optimierung, Vektorisierung, Parallelisierung, Verteiltes Rechnen und Rechnen auf Grafikkarten.
 
-In diesem Kapitel werden die referenzierten Techniken erklärt.
+In dieser Zusammenfassung werden die referenzierten Techniken erklärt.
 
 \section{Speicher und Latenzen}
 Der Hauptspeicher ist aufgeteilt in den logischen und physischen Speicher.
@@ -55,8 +55,6 @@ for (int i=0; i+1 < n; i+=2) {
 }
 \end{lstlisting}
 
-\pagebreak
-
 Eine alternative Technik ist das sog. \emph{Prefetching}, wo Daten vorzeitig in den Cache geladen werden, bevor sie verwendet werden müssen, siehe \autoref{lst:2}.
 Der Vorteil dieser Technik ist, dass so auch Daten, von denen der Compiler noch nicht einschätzen kann, wann sie geladen werden müssen, geladen werden können.
 Dies wäre zum Beispiel der Fall bei \lstinline|x[i] = z[y[i]]|, wo die Position in \(z\) abhängig vom Wert in \(y\) ist, und somit laufzeitabhängig sein kann.
@@ -87,8 +85,6 @@ Ein Polynom \(a_0, \dots, a_n\) kann mit schlauer mit dem Horner-Schema an der S
 \[(((a_n x + a_{n-1}) x + a_{n-2}) \dots ) x + a_0.\]
 Offenbar muss so der ganze Term von links berechnet werden.
 Alternativ lassen sich jedoch die Potenzen aufteilen in unabhängige gerade und ungerade, die gleichzeitig berechnet werden können.
-
-\newpage
 
 \section{Vektorisierung}\label{sec:2}
 Vektorisierung ist eine weitere Technik, die verwendet werden kann, um mehrere Daten gleichzeitig zu berechnen.
@@ -278,8 +274,6 @@ Dabei kann beim symmetrischen Verfahren die Approximation verwendet werden, wenn
 
 Das ganze erfolgt beispielweise symmetrisch über Vorwärts- und Rückwärtstransformationen bei denen jeweils rekursiv die Gravitationsfaktoren für alle Cluster berechnet werden und berechnete Kräfte zu Vaterknoten weitergegeben werden.
 
-\pagebreak
-
 \section{Verteiltes Rechnen mit MPI}
 Die Idee hinter verteiltem Rechnen ist eine Parallelisierung zwischen verschiedenen Geräten die erfolgt indem Nachrichten in einem Netzwerk ausgetauscht werden zwischen einzelnen Systemen.
 Der Message Passing Interface (MPI) Standard wird oft verwendet, um ein Problem verteilt zu lösen und die nötige Kommunikation zu regeln.
@@ -418,7 +412,10 @@ Der Transfer zwischen CPU Pointer und GPU Pointer wird mit \lstinline|cudaMemcpy
 Der Parameter \lstinline|kind| kann dabei entweder \lstinline|cudaMemcpyHostToDevice| oder \lstinline|cudaMemcpyDeviceToHost| sein.
 
 Ein Kernel \lstinline|func| wird mit \lstinline|func<<<($T$, $B$>>>($\dots$)| aufgerufen, wobei \(B\) die Blockgröße ist, und \(T\) die Anzahl an Threadblöcken darstellt.
-Typischerweise haben wir \(B = 256\) und \(T = (n+255)/256\) für Problemgröße \(n\).
+Typischerweise haben wir \(B = 256\) und \(T = (n+B-1)/B\) für Problemgröße \(n\).
+Die optimale Blockgröße ist abhängig von dem jeweiligen Problem und der Hardware.
+Auf jeden Fall muss gelten \(32 \mid B\), da wir immer \(32\) Threads in einen Warp reinstecken.
+Wenn ein Thread viele Register braucht, sollte man eher eine kleinere Blockgröße wählen, da sonst die Register ausgehen, da sie unter allen Threads in einem Threadblock geteilt werden.
 
 Nach dem Aufruf vom Kernel rechnet die CPU nebenbei weiter, kann aber mit \lstinline|cudaDeviceSynchronize| auf das Ende vom Kernel warten.
 
@@ -428,7 +425,7 @@ Das funktioniert mit \lstinline|cudaMallocManaged(void** mem, size_t size)|.
 Der Pointer \lstinline|mem*| wird nun automatisch im Kernel als Grafikadresse interpretiert, und der Transfer zwischen GPU und CPU Speicher funktioniert intime ähnlich wie Cache.
 
 \paragraph{Streams}
-Eine schlauere Methode den Datentransfer zu regeln erfolgt durch \emph{Streams} -- einem nicht-blockierenden Datentransfer.
+Eine schlauere Methode den Datentransfer zu regeln erfolgt durch mehrere \emph{Streams} -- einem nicht-blockierenden Datentransfer.
 Die Idee ist, gleichzeitig auf der GPU zu rechnen während auf die nächsten Daten gewartet wird.
 Ein Beispielprogramm, das Streams verwendet ist in \autoref{lst:10} zu finden.
 
@@ -467,9 +464,14 @@ for (int i = 0; i < STREAMS; i++) {
 \end{lstlisting}
 
 \subsection{OpenCL}
-Eine Alternative zu CUDA, die auf vielen Geräten funktioniert, ist OpenGL.
-Leider ist OpenCL durchaus komplexer als CUDA und hat eine etwas lästige Designphilosophie.
-Um ein Programm in OpenCL zu starten, müssen die folgenden Schritte erfolgen.
+Eine Alternative zu CUDA, die auf vielen Geräten funktioniert, ist OpenCL.
+Leider ist OpenCL durchaus komplexer als CUDA und hat eine etwas lästige Designphilosophie, ist jedoch flexibler.
+Unterschiedlich zu CUDA, werden Threads tatsächlich \emph{Work Items} genannt, und Threadblöcke \emph{Work Groups}.
+Threads in einer Work Group werden wie in CUDA nebenläufig ausgeführt und teilen sich über speziell \lstinline|__local| markierte Variablen.
+Solche Variablen können als Cache fungieren.
+Synchronisation von Threads in einer Work Group kann über Barrieren erfolgen.
+
+Um ein Programm in OpenCL zu starten, müssen die folgenden Schritte ausgeführt werden.
 
 \begin{enumerate}
     \item Finde und wähle die Plattform (Verschiedene Implementierungen von OpenCL, z.B. NVIDIA CUDA, rusticl).
@@ -487,4 +489,20 @@ Um ein Programm in OpenCL zu starten, müssen die folgenden Schritte erfolgen.
     \item Zuletzt, warte bis alle Befehle in der Warteschlange ausgeführt wurden.
 \end{enumerate}
 
-Unterschiedlich zu CUDA, werden Threads tatsächlich \emph{Work Iterms} genannt, und Threadblöcke \emph{Work Groups}.
+\paragraph{Verflochtene Warteschlangen}
+In OpenCL gibt es keine Möglichkeit Streams zu erstellen, jedoch können mehrere Warteschlangen gleichzeitig verwendet werden, um ein ähnliches Verhalten zu erreichen.
+Dabei kann ähnlich wie in \autoref{lst:10} der Input partitioniert werden, welche in die jeweilige Warteschlange übertragen werden.
+Die Warteschlangen verhalten sich dann genau wie Streams.
+Tatsächlich verwendet CUDA automatisch immer einen Stream.
+
+\paragraph{Geteilter Speicher in OpenCL}
+Auch in OpenCL kann ein Pointer so deklariert werden, dass er gleichzeitig auf der CPU und auf der GPU verwendet werden kann.
+Dies wird meist auf zwei verschiedene Arten von der Plattform implementiert.
+Beim \emph{coarse-grained shared memory} erfolgt dies über implizierte Warteschlangen und bei \emph{fine-grained shared memory} wird der Transfer vom Betriebssystem garantiert.
+
+Genau wie bei Caches und CUDA ist wieder Thrashing möglich, wenn abwechselnd CPU und GPU auf einem Speicher schreiben.
+Deswegen, am besten so wenig Speicher austauschen wie möglich.
+
+\paragraph{Events}
+In OpenCL können Events erstellt werden, auf die der Host warten kann.
+Außerdem können Funktionen definiert werden, die auf dem Host ausgeführt werden, wenn ein Event getriggert wird.
