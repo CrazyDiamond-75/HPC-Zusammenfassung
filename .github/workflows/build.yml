@@ -32,8 +32,13 @@ jobs:
       #    name: Generated PDF
       #    path: hpc_summary.pdf
       
+      - name: Move PDF inside public directory
+        run: |
+          mkdir ./public
+          mv hpc_summary.pdf
+      
       - name: Upload PDF
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
+          publish_dir: ./public
