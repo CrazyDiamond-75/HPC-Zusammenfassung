@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: CrazyDiamond75/latex-with-fonts:latest
+      image: crazydiamond75/latex-with-fonts:latest
 
     steps:
       - name: Checkout repository
