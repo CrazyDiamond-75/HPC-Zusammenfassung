@@ -91,7 +91,7 @@ Vektorisierung ist eine weitere Technik, die verwendet werden kann, um mehrere D
 Generell verläuft Vektorisierung nach dem SIMD (Single Instruction, Multiple Data) Prinzip.
 Wir wenden also die gleiche Operation auf mehrere Daten gleichzeitig an.
 Dabei werden nach AVX und AVX2 spezielle Vektorregister verwendet, die jeweils 128 und 256 Bit gleichzeitig berechnen können.
-In AVX kann mit u.a., Acht 32 Bit \lstinline|float| Werten gleichzeitig gerechnet werden, in AVX2 sind es Sechzehn.
+In AVX kann mit u.a., Vier 32 Bit \lstinline|float| Werten gleichzeitig gerechnet werden, in AVX2 sind es Acht.
 
 AVX Register können explizit über Intrinsics verwendet werden, es kann aber auch automatisch durch den Compiler vektorisiert werden\footnote{\texttt{-ffast-math} muss als Compiler Flagge gesetzt sein, damit Gleitkommazahlen vektorisiert werden dürfen.}.
 
@@ -256,8 +256,8 @@ Offenbar will man nicht, dass immer alle Threads warten müssen, wenn synchronis
 In OMP 4.0 wurden deswegen Task Abhängigkeiten eingeführt, mit denen spezifiziert werden kann, welche Tasks von anderen abhängig sind.
 Abhängigkeiten werden mit der \lstinline|depend($t$: $v, \dots$)|-Klausel in einem Task deklariert.
 Dabei kann \(t\) entweder \lstinline|in|, \lstinline|out|, oder \lstinline|inout| sein, je nachdem wie die Abhängigkeit über Variablen \(v, \dots\) funktionieren soll.
-Tasks werden dann so ausgeführt, dass alle Tasks mit einer \lstinline|in|- oder \lstinline|out|-Abhängigkeit für \(x\) auf alle vorherigen Tasks warten, die auf \(x\) schreiben (\lstinline|out| und \lstinline|inout|).
-Tasks mit einer \lstinline|inout|-Abhängigkeit für \(x\) warten auf alle vorherigen Tasks, die \(x\) lesen oder auf \(x\) schreiben (\lstinline|in|, \lstinline|out|, \lstinline|inout|).
+Tasks werden dann so ausgeführt, dass alle Tasks mit einer \lstinline|in|--Abhängigkeit für \(x\) auf alle vorherigen Tasks warten, die auf \(x\) schreiben (\lstinline|out| und \lstinline|inout|).
+Tasks mit einer \lstinline|inout|- oder \lstinline|out|-Abhängigkeit für \(x\) warten auf alle vorherigen Tasks, die \(x\) lesen oder auf \(x\) schreiben (\lstinline|in|, \lstinline|out|, \lstinline|inout|).
 
 Schleifen können auch in Tasks aufgeteilt werden mit \lstinline|#pragma omp taskloop|, wo ein bestehendes Team von Threads automatisch auf einzelne Iterationen aufgeteilt wird.
 
