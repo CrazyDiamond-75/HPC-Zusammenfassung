@@ -9,9 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: crazydiamond75/latex-with-fonts:latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -19,9 +16,10 @@ jobs:
       - name: Compile LaTeX
         uses: xu-cheng/latex-action@v4
         with:
+          docker_image: crazydiamond75/latex-with-fonts:latest
           root_file: hpc_summary.tex
           latexmk_use_lualatex: true
-          #args: -pvc
+          args: -pvc -halt-on-error
           #latexmk_shell_escape: true
 
       # May deploy to GitHub pages after this.
