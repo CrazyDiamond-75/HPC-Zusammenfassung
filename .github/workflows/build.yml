@@ -19,8 +19,6 @@ jobs:
           docker_image: crazydiamond75/latex-with-fonts:latest
           root_file: hpc_summary.tex
           latexmk_use_lualatex: true
-          args: -pvc -halt-on-error
-          #latexmk_shell_escape: true
 
       # May deploy to GitHub pages after this.
 
